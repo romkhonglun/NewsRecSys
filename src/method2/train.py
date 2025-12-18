@@ -75,7 +75,7 @@ def main():
         processed_dir=args.processed_dir,
         embedding_path=args.embedding_path,
         batch_size=512,
-        history_len=30,
+        use_iterable=False,
         num_workers=2
     )
 
