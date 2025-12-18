@@ -54,6 +54,18 @@ def parse_args():
         default=None,
         help="T_max for CosineAnnealingLR (optional)"
     )
+    parser.add_argument(
+        "--epochs",
+        type=int,
+        default=None,
+        help="Max LR for OneCycleLR (default inside module if not set)"
+    )
+    parser.add_argument(
+        "--batch_size",
+        type=int,
+        default=None,
+        help="Max LR for OneCycleLR (default inside module if not set)"
+    )
     return parser.parse_args()
 
 def main():
@@ -74,7 +86,7 @@ def main():
     dm = NAMLDataModule(
         processed_dir=args.processed_dir,
         embedding_path=args.embedding_path,
-        batch_size=512,
+        batch_size=args.batch_size,
         use_iterable=False,
         num_workers=2
     )
@@ -129,8 +141,8 @@ def main():
             TQDMProgressBar(refresh_rate=10)
         ],
         gradient_clip_algorithm="norm",
-        max_epochs=20,
-        precision="32",
+        max_epochs=args.epochs,
+        precision="16-mixed",
     )
 
     print("🚀 Starting training...")
