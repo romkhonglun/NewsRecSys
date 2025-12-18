@@ -109,15 +109,31 @@ class PreprocessedIterableDataset(IterableDataset):
                 self.hist_lens[uid] = l
 
     def _process_row(self, row):
-        user_id = row["user_id"]
+        # Đảm bảo user_id là int trước khi đưa vào indexing
+        try:
+            user_id = int(row["user_id"])
+        except (ValueError, TypeError):
+            # Trường hợp user_id không thể convert sang số (ví dụ chuỗi băm)
+            # Bạn cần xem lại bước encode user_id ở tiền xử lý
+            return None
+
         imp_ts = row["imp_ts"] or 0.0
 
-        # --- 1. TRUY XUẤT LỊCH SỬ (O(1) complexity) ---
-        h_ids = self.hist_ids_mat[user_id]
-        h_scr = self.hist_scr_mat[user_id]
-        h_tm = self.hist_tm_mat[user_id]
-        h_ts = self.hist_ts_mat[user_id]
-        curr_len = self.hist_lens[user_id]
+        # --- 1. TRUY XUẤT LỊCH SỬ ---
+        # Kiểm tra xem user_id có nằm trong phạm vi ma trận không
+        if user_id >= self.hist_ids_mat.shape[0]:
+            # Nếu user mới hoàn toàn, trả về history rỗng
+            h_ids = np.zeros(self.history_len, dtype=np.int32)
+            h_scr = np.zeros(self.history_len, dtype=np.float32)
+            h_tm = np.zeros(self.history_len, dtype=np.float32)
+            h_ts = np.zeros(self.history_len, dtype=np.float64)
+            curr_len = 0
+        else:
+            h_ids = self.hist_ids_mat[user_id]
+            h_scr = self.hist_scr_mat[user_id]
+            h_tm = self.hist_tm_mat[user_id]
+            h_ts = self.hist_ts_mat[user_id]
+            curr_len = self.hist_lens[user_id]
 
         # --- 2. TÍNH RECENCY (Vectorized) ---
         ts_diff_log = np.zeros(self.history_len, dtype=np.float32)
@@ -157,6 +173,11 @@ class PreprocessedIterableDataset(IterableDataset):
             scores = np.zeros((len(candidate_ids), 1), dtype=np.float32)
 
         # --- 6. TENSOR CONVERSION ---
+        try:
+            dev_type = int(row["device_type"] or 0)
+        except:
+            dev_type = 0
+
         return {
             "hist_indices": torch.from_numpy(h_ids.astype(np.int64)),
             "hist_scroll": torch.from_numpy(h_scr),
@@ -165,22 +186,29 @@ class PreprocessedIterableDataset(IterableDataset):
             "cand_indices": torch.tensor(candidate_ids, dtype=torch.long),
             "cand_num": torch.from_numpy(cand_nums),
             "cand_cat": torch.from_numpy(cand_cats).long(),
-            "cand_sim": torch.from_numpy(np.nan_to_num(scores, 0.0)),
-            "imp_feats": torch.tensor([np.log1p(curr_len), (imp_ts % 86400) / 86400.0, row["norm_age"] or 0.0],
-                                      dtype=torch.float),
-            "device_type": torch.tensor(row["device_type"] or 0, dtype=torch.long),
+            "cand_sim": torch.from_numpy(np.nan_to_num(scores, 0.0)).float(),
+            "imp_feats": torch.tensor([
+                np.log1p(curr_len),
+                (imp_ts % 86400) / 86400.0,
+                float(row["norm_age"] or 0.0)
+            ], dtype=torch.float),
+            "device_type": torch.tensor(dev_type, dtype=torch.long),
             "labels": torch.tensor([1.0] + [0.0] * self.neg_ratio, dtype=torch.float)
         }
 
     def _stream_parquet(self):
         pf = pq.ParquetFile(self.behaviors_path)
-        # Tăng batch_size của Parquet để đọc từ disk nhanh hơn
         for batch in pf.iter_batches(batch_size=self.batch_size * 20):
+            # Chuyển batch sang dictionary
             batch_dict = batch.to_pydict()
             keys = list(batch_dict.keys())
             length = len(batch_dict[keys[0]])
+
             for i in range(length):
-                yield {k: batch_dict[k][i] for k in keys}
+                row = {k: batch_dict[k][i] for k in keys}
+                # Thêm log để debug nếu vẫn lỗi (có thể bỏ khi chạy thật)
+                # if i == 0: print(f"DEBUG: user_id type: {type(row['user_id'])}")
+                yield row
 
     def __iter__(self):
         # ... (Phần logic worker/dist sharding giữ nguyên như cũ) ...
@@ -205,7 +233,9 @@ class PreprocessedIterableDataset(IterableDataset):
             yield from buffer
         else:
             for item in iterator:
-                yield self._process_row(item)
+                processed = self._process_row(item)
+                if processed is not None:
+                    yield processed
 
 
 # ==========================================
