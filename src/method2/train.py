@@ -142,7 +142,7 @@ def main():
         ],
         gradient_clip_algorithm="norm",
         max_epochs=args.epochs,
-        precision="16-mixed",
+        precision="bf16-true",
     )
 
     print("🚀 Starting training...")
