@@ -315,8 +315,8 @@ class NAMLDataModule(L.LightningDataModule):
 
     def train_dataloader(self):
         return DataLoader(self.train_ds, batch_size=self.hparams.batch_size,
-                          num_workers=self.hparams.num_workers, pin_memory=True)
+                          num_workers=self.hparams.num_workers, pin_memory=True, persistent_workers=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_ds, batch_size=self.hparams.batch_size,
-                          num_workers=self.hparams.num_workers, pin_memory=True)
+                          num_workers=self.hparams.num_workers, pin_memory=True, persistent_workers=True)

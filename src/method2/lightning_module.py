@@ -12,8 +12,19 @@ from utils import MetricsMeter
 
 
 class NAMLLightningModule(L.LightningModule):
-    def __init__(self, config=None, embedding_path=None, lr=1e-4, weight_decay=1e-5):
+    def __init__(
+        self,
+        config=None,
+        embedding_path=None,
+        lr=1e-4,
+        weight_decay=1e-5,
+        scheduler="onecycle",
+        scheduler_total_steps=None,
+        scheduler_max_lr=None,
+        scheduler_t_max=None,
+    ):
         super().__init__()
+        # save hyperparameters (will include scheduler and its params)
         self.save_hyperparameters(ignore=['config'])
 
         self.config = config if config is not None else TIME_FEATURE_NAMLConfig()
@@ -24,7 +35,6 @@ class NAMLLightningModule(L.LightningModule):
             vectors_np = np.load(embedding_path)
             vectors_tensor = torch.from_numpy(vectors_np).float()
 
-            # Cập nhật config dim nếu khác
             real_dim = vectors_tensor.shape[1]
             if self.config.pretrained_dim != real_dim:
                 self.config.pretrained_dim = real_dim
@@ -37,51 +47,31 @@ class NAMLLightningModule(L.LightningModule):
 
         self.model = TIME_FEATURE_NAML(self.config, vectors_tensor)
 
-        # --- Metrics Meter (Thay cho criterion lẻ) ---
-        # Kết hợp: 1.0 * BCE + 0.5 * ListNet
-        # ListNet giúp học Ranking tốt hơn BCE thuần
+        # --- Metrics Meter ---
         self.loss_weights = {"bce_loss": 1.0}
         self.meter = MetricsMeter(self.loss_weights)
 
     def forward(self, batch):
         return self.model(batch)
 
-    # --- Hook Reset Metrics đầu mỗi Epoch ---
     def on_train_epoch_start(self):
         self.meter.reset()
 
     def on_validation_epoch_start(self):
         self.meter.reset()
 
-    # --- Training Step ---
     def training_step(self, batch, batch_idx):
-        # 1. Forward Pass
-        # output trả về dict {'preds': ..., 'labels': ...} từ model
         for k, v in batch.items():
             if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
                 if torch.isnan(v).any():
                     raise ValueError(f"❌ Input '{k}' chứa NaN! Kiểm tra lại preprocess.")
                 if torch.isinf(v).any():
                     raise ValueError(f"❌ Input '{k}' chứa Inf! Kiểm tra lại preprocess.")
-        # ------------------------------
 
         output = self(batch)
-
-        # 2. Update Meter
-        # Trộn batch gốc (chứa labels gốc) với output (chứa preds)
-        # Lưu ý: batch['labels'] có thể chứa padding (-1), output['labels'] cũng vậy
-        # Ta cần đảm bảo pass đúng labels vào meter.
-
-        # Gom lại thành dict cho meter
-        meter_input = {
-            "preds": output["preds"],  # [Batch, Num_Cand]
-            "labels": batch["labels"]  # [Batch, Num_Cand] (chứa 1, 0, và pad)
-        }
-
-        # Hàm update trả về dict các loại loss
+        meter_input = {"preds": output["preds"], "labels": batch["labels"]}
         losses = self.meter.update(meter_input)
 
-        # 3. Logging
         self.log_dict(
             {f"train/{k}": v for k, v in losses.items()},
             on_step=True, on_epoch=True, prog_bar=True, batch_size=len(batch['hist_indices'])
@@ -89,30 +79,17 @@ class NAMLLightningModule(L.LightningModule):
 
         return losses["loss"]
 
-    # --- Validation Step ---
     def validation_step(self, batch, batch_idx):
         output = self(batch)
-
-        meter_input = {
-            "preds": output["preds"],
-            "labels": batch["labels"]
-        }
-
-        # Update metrics nhưng không cần lấy loss ngay (sẽ log ở epoch end)
+        meter_input = {"preds": output["preds"], "labels": batch["labels"]}
         self.meter.update(meter_input)
 
-    # --- Validation Epoch End ---
     def on_validation_epoch_end(self):
-        # Tính toán metric tổng hợp (AUC, NDCG)
         metrics = self.meter.compute()
-
-        # Log ra console/wandb
         self.log_dict(
             {f"val/{k}": v for k, v in metrics.items()},
             on_epoch=True, prog_bar=True
         )
-
-        # In ra màn hình để dễ theo dõi
         print(f"\nEpoch {self.current_epoch} Val Metrics: {metrics}")
 
     def configure_optimizers(self):
@@ -121,24 +98,38 @@ class NAMLLightningModule(L.LightningModule):
             lr=self.hparams.lr,
             weight_decay=self.hparams.weight_decay
         )
-        # Cosine Decay
-        # scheduler = optim.lr_scheduler.CosineAnnealingLR(
-        #     optimizer,
-        #     T_max=self.trainer.estimated_stepping_batches if hasattr(self.trainer, 'estimated_stepping_batches') else 10000
-        # )
-        scheduler = optim.lr_scheduler.OneCycleLR(
-            optimizer,
-            max_lr=3e-3,
-            total_steps=10000,
-            pct_start=0.1,
-            anneal_strategy="cos"
-        )
-        # scheduler = optim.lr_scheduler.ReduceLROnPlateau(
-        #     optimizer,
-        #     mode="min",
-        #     factor=0.5,
-        #     patience=2,
-        #     min_lr=1e-6
-        # )
 
-        return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+        scheduler_choice = getattr(self.hparams, "scheduler", "onecycle")
+
+        # OneCycleLR (step-based)
+        if scheduler_choice == "onecycle":
+            # determine total_steps: explicit > trainer estimate > fallback
+            total_steps = getattr(self.hparams, "scheduler_total_steps", None)
+
+            if total_steps is None or total_steps <= 0:
+                total_steps = 10000
+            print(f"total_steps for OneCycleLR: {total_steps}")
+            max_lr = getattr(self.hparams, "scheduler_max_lr", 3e-3)
+
+            if max_lr is None:
+                max_lr = 3e-3
+
+            print(f"total_steps for OneCycleLR: {total_steps}, max_lr: {max_lr}")
+            scheduler = optim.lr_scheduler.OneCycleLR(
+                optimizer,
+                max_lr=max_lr,
+                total_steps=total_steps,
+                pct_start=0.1,
+                anneal_strategy="cos"
+            )
+            return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+
+        # Cosine annealing (step-based)
+        if scheduler_choice == "cosine":
+            t_max = getattr(self.hparams, "scheduler_t_max", None)
+            if t_max is None or t_max <= 0:
+                t_max = 10000
+            scheduler = optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=t_max)
+            return {"optimizer": optimizer, "lr_scheduler": {"scheduler": scheduler, "interval": "step"}}
+
+        return optimizer

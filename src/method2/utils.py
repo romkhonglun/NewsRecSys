@@ -126,12 +126,6 @@ class MetricsMeter(torch.nn.Module):
             bce = bce.masked_fill(~mask, 0)
             metrics["bce_loss"] = bce.sum() / (mask.sum() + 1e-6)
 
-        # 2. Tính Dice Loss (Optional)
-        if self.has_dice:
-            # Dice loss của toolbelt tự handle ignore_index
-            dice = self.dice_loss(preds, labels.float())
-            metrics["dice_loss"] = dice
-
         # 3. Tính ListNet Loss (Listwise)
         if "listnet_loss" in self.loss_weights:
             metrics["listnet_loss"] = binary_listnet_loss(
