@@ -74,7 +74,7 @@ def main():
     dm = NAMLDataModule(
         processed_dir=args.processed_dir,
         embedding_path=args.embedding_path,
-        batch_size=128,
+        batch_size=512,
         history_len=30,
         num_workers=2
     )
