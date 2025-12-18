@@ -82,15 +82,15 @@ class PreprocessedIterableDataset(IterableDataset):
 
     def _load_history_to_numpy(self, path):
         print(f"📦 Pre-loading History into Numpy Matrices...")
-        # Thêm .with_columns để ép kiểu user_id sang int
-        df = pl.read_parquet(path).with_columns(
-            pl.col("user_id").cast(pl.Int32)
-        )
+        df = pl.read_parquet(path)
+
+        # Đảm bảo user_id là kiểu số
+        if df["user_id"].dtype == pl.Utf8:
+            df = df.with_columns(pl.col("user_id").cast(pl.Int32))
 
         max_uid = df["user_id"].max() or 0
         num_users = int(max_uid) + 1
 
-        # Khởi tạo ma trận rỗng (Pre-padded với 0)
         self.hist_ids_mat = np.zeros((num_users, self.history_len), dtype=np.int32)
         self.hist_scr_mat = np.zeros((num_users, self.history_len), dtype=np.float32)
         self.hist_tm_mat = np.zeros((num_users, self.history_len), dtype=np.float32)
@@ -101,11 +101,19 @@ class PreprocessedIterableDataset(IterableDataset):
             uid = row["user_id"]
             ids = row["hist_ids"][-self.history_len:] if row["hist_ids"] else []
             l = len(ids)
+
             if l > 0:
                 self.hist_ids_mat[uid, :l] = ids
-                self.hist_scr_mat[uid, :l] = np.nan_to_num(row["hist_scroll"][:l], nan=0.0)
-                self.hist_tm_mat[uid, :l] = np.nan_to_num(row["hist_time"][:l], nan=0.0)
-                self.hist_ts_mat[uid, :l] = np.nan_to_num(row["hist_ts"][:l], nan=0.0)
+
+                # SỬA TẠI ĐÂY: Xử lý NaN quyết liệt hơn cho từng mảng
+                def clean_array(data, length):
+                    # Lấy đúng độ dài, chuyển về numpy, thay NaN/Inf bằng 0.0
+                    arr = np.array(data[:length], dtype=np.float32)
+                    return np.nan_to_num(arr, nan=0.0, posinf=0.0, neginf=0.0)
+
+                self.hist_scr_mat[uid, :l] = clean_array(row["hist_scroll"], l)
+                self.hist_tm_mat[uid, :l] = clean_array(row["hist_time"], l)
+                self.hist_ts_mat[uid, :l] = clean_array(row["hist_ts"], l)
                 self.hist_lens[uid] = l
 
     def _process_row(self, row):
@@ -180,9 +188,9 @@ class PreprocessedIterableDataset(IterableDataset):
 
         return {
             "hist_indices": torch.from_numpy(h_ids.astype(np.int64)),
-            "hist_scroll": torch.from_numpy(h_scr),
-            "hist_time": torch.from_numpy(h_tm),
-            "hist_diff": torch.from_numpy(ts_diff_log),
+            "hist_scroll": torch.nan_to_num(torch.from_numpy(h_scr), 0.0), # Gia cố thêm
+            "hist_time": torch.nan_to_num(torch.from_numpy(h_tm), 0.0),
+            "hist_diff": torch.nan_to_num(torch.from_numpy(ts_diff_log), 0.0),
             "cand_indices": torch.tensor(candidate_ids, dtype=torch.long),
             "cand_num": torch.from_numpy(cand_nums),
             "cand_cat": torch.from_numpy(cand_cats).long(),
