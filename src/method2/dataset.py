@@ -252,8 +252,8 @@ class NAMLDataModule(L.LightningDataModule):
         # Lưu ý: Với MapDataset có thể dùng shuffle=True, IterableDataset thì KHÔNG
         return DataLoader(self.train_ds, batch_size=self.hparams.batch_size,
                           shuffle=(not self.use_iterable),
-                          num_workers=self.hparams.num_workers)
+                          num_workers=self.hparams.num_workers,persistent_workers=True)
 
     def val_dataloader(self):
         return DataLoader(self.val_ds, batch_size=self.hparams.batch_size,
-                          num_workers=self.hparams.num_workers)
+                          num_workers=self.hparams.num_workers,persistent_workers=True)
