@@ -12,3 +12,4 @@ wheels/
 *.parquet
 /ebnerd_small
 *.env
+*.pkl
