@@ -11,3 +11,4 @@ wheels/
 *.zip
 *.parquet
 /ebnerd_small
+*.env
