@@ -29,6 +29,22 @@ class AUC(torchmetrics.MeanMetric):
             value = torch.stack(auc_scores).mean()
             super().update(value=value, weight=len(auc_scores))
 
+class MRR(torchmetrics.MeanMetric):
+    def update(self, preds: torch.Tensor, labels: torch.Tensor):
+        mrr_scores = []
+        for _p, _l in zip(preds, labels):
+            _mask = _l != -1
+            if _mask.sum() > 0:
+                # Sử dụng hàm có sẵn của torchmetrics cho bài toán retrieval
+                # Target phải là kiểu long (0 hoặc 1)
+                score = torchmetrics.functional.retrieval.retrieval_reciprocal_rank(
+                    preds=_p[_mask], target=_l[_mask].long()
+                )
+                mrr_scores.append(score)
+
+        if len(mrr_scores) > 0:
+            value = torch.stack(mrr_scores).mean()
+            super().update(value=value, weight=len(mrr_scores))
 
 class NDCG5(torchmetrics.MeanMetric):
     def update(self, preds: torch.Tensor, labels: torch.Tensor):
@@ -89,7 +105,6 @@ def binary_listnet_loss(y_pred, y_true, eps=1e-5, padded_value_indicator=-1):
 class MetricsMeter(torch.nn.Module):
     def __init__(self, loss_weights: dict = None):
         super().__init__()
-        # Mặc định weight nếu không truyền vào
         if loss_weights is None:
             self.loss_weights = {"bce_loss": 1.0, "listnet_loss": 0.5}
         else:
@@ -97,8 +112,10 @@ class MetricsMeter(torch.nn.Module):
 
         self.bce_loss = torch.nn.BCEWithLogitsLoss(reduction="none")
 
+        # Thêm mrr vào đây
         self.eval_metrics = torchmetrics.MetricCollection({
             "auc": AUC(),
+            "mrr": MRR(),
             "ndcg@5": NDCG5(),
             "ndcg@10": NDCG10(),
         })
