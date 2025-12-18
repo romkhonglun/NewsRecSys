@@ -82,11 +82,13 @@ class PreprocessedIterableDataset(IterableDataset):
 
     def _load_history_to_numpy(self, path):
         print(f"📦 Pre-loading History into Numpy Matrices...")
-        df = pl.read_parquet(path)
+        # Thêm .with_columns để ép kiểu user_id sang int
+        df = pl.read_parquet(path).with_columns(
+            pl.col("user_id").cast(pl.Int32)
+        )
 
-        # Mapping user_id sang index nếu cần, ở đây giả định user_id đã là số nguyên
         max_uid = df["user_id"].max() or 0
-        num_users = max_uid + 1
+        num_users = int(max_uid) + 1
 
         # Khởi tạo ma trận rỗng (Pre-padded với 0)
         self.hist_ids_mat = np.zeros((num_users, self.history_len), dtype=np.int32)
