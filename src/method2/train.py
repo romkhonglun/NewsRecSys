@@ -125,8 +125,8 @@ def main():
         callbacks=[
             checkpoint_callback,
             early_stop_callback,
-            RichModelSummary(max_depth=2),
-            RichProgressBar(refresh_rate=10)
+            ModelSummary(max_depth=2),
+            TQDMProgressBar(refresh_rate=10)
         ],
         gradient_clip_algorithm="norm",
         max_epochs=20,
