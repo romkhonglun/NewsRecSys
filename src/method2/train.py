@@ -138,12 +138,12 @@ def main():
             checkpoint_callback,
             early_stop_callback,
             ModelSummary(max_depth=2),
-            TQDMProgressBar(refresh_rate=1)
         ],
         gradient_clip_algorithm="norm",
         max_epochs=args.epochs,
         precision="bf16-true",
-        num_sanity_val_steps=0
+        num_sanity_val_steps=0,
+        enable_progress_bar=True
     )
 
     print("🚀 Starting training...")
