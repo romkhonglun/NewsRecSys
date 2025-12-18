@@ -13,3 +13,4 @@ wheels/
 /ebnerd_small
 *.env
 *.pkl
+*.npy
