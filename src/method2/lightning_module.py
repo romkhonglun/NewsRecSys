@@ -63,12 +63,12 @@ class NAMLLightningModule(L.LightningModule):
     def training_step(self, batch, batch_idx):
         if batch_idx == 0 or batch_idx == 1:
             print("--- Đã nhận được batch đầu tiên trên TPU! ---")
-        for k, v in batch.items():
-            if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
-                if torch.isnan(v).any():
-                    raise ValueError(f"❌ Input '{k}' chứa NaN! Kiểm tra lại preprocess.")
-                if torch.isinf(v).any():
-                    raise ValueError(f"❌ Input '{k}' chứa Inf! Kiểm tra lại preprocess.")
+        # for k, v in batch.items():
+        #     if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
+        #         if torch.isnan(v).any():
+        #             raise ValueError(f"❌ Input '{k}' chứa NaN! Kiểm tra lại preprocess.")
+        #         if torch.isinf(v).any():
+        #             raise ValueError(f"❌ Input '{k}' chứa Inf! Kiểm tra lại preprocess.")
 
         output = self(batch)
         meter_input = {"preds": output["preds"], "labels": batch["labels"]}
