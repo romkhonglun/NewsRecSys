@@ -61,6 +61,8 @@ class NAMLLightningModule(L.LightningModule):
         self.meter.reset()
 
     def training_step(self, batch, batch_idx):
+        if batch_idx == 0:
+            print("--- Đã nhận được batch đầu tiên trên TPU! ---")
         for k, v in batch.items():
             if isinstance(v, torch.Tensor) and torch.is_floating_point(v):
                 if torch.isnan(v).any():
