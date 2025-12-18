@@ -138,7 +138,7 @@ def main():
             checkpoint_callback,
             early_stop_callback,
             ModelSummary(max_depth=2),
-            TQDMProgressBar(refresh_rate=10)
+            TQDMProgressBar(refresh_rate=1)
         ],
         gradient_clip_algorithm="norm",
         max_epochs=args.epochs,
