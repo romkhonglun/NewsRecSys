@@ -142,7 +142,7 @@ def main():
         ],
         gradient_clip_algorithm="norm",
         max_epochs=args.epochs,
-        precision="bf16-mixed",
+        precision="bf16-true",
         num_sanity_val_steps=0
     )
 
