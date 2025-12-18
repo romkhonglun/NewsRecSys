@@ -88,7 +88,7 @@ def main():
         embedding_path=args.embedding_path,
         batch_size=args.batch_size,
         use_iterable=False,
-        num_workers=2
+        num_workers=4
     )
 
     # 3. Init Model (Lightning Module)
